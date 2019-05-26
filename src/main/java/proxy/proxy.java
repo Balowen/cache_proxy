@@ -23,12 +23,11 @@ public class proxy {
         //Connecting to SQLite database
         String url = "jdbc:sqlite:E:/projekty/proxy_redis/chinook.db";
         ConnectionSource connectionSource = new JdbcConnectionSource(url);
-        //Utworzenie data acces object dla tabeli customer
+        //Utworzenie data access object dla tabeli customer
         Dao<customer,Integer> daoCustomer = DaoManager.createDao(connectionSource, customer.class);
 
         Gson gson = new Gson();
         while(true) {
-
             Scanner sc = new Scanner(System.in);
             System.out.println("Wpisz stop by zamknac program");
             System.out.println("Podaj query: ");
@@ -50,32 +49,36 @@ public class proxy {
                     showRedisResults(jedis,gson, redisKey);
                 else {
                     //Pobranie wynikow z bazy danych
-                    GenericRawResults<String[]> rawResults = daoCustomer.queryRaw(query);
-                    List<String[]> resultDB = rawResults.getResults();
-
-                    //Wyswietlenie wynikow z bazy
-                    resultDB.forEach(ar -> System.out.println(Arrays.toString(ar)));
-                    System.out.println("To byly wyniki z bazy");
-
-                    //Serializing result of query to JSON
-                    String queryRes = gson.toJson(resultDB);
-                    //Setting result in Redis
-                    jedis.set(redisKey, queryRes);
-                    //Setting expire time
-                    jedis.expire(redisKey, 300);
+                    List<String[]> resultDB =
+                            getDBresults(daoCustomer,query);
+                    //Serializacja wynikow do json
+                    String queryResult = gson.toJson(resultDB);
+                    //umieszczenie wynikow w Redis
+                    jedis.set(redisKey, queryResult);
+                    //Dopuszczalny czas nieświeżości danych -> 2 minuty
+                    jedis.expire(redisKey, 120);
                 }
             }
         }
     }
 
     private static void showRedisResults(Jedis jedis, Gson gson, String redisKey){
-        Type type = new TypeToken<List<String[]>>(){}.getType();
+        Type myList = new TypeToken<List<String[]>>(){}.getType();
         String fromJedis = jedis.get(redisKey);
-        List<String[]> resultRedis = gson.fromJson(fromJedis, type);
+        List<String[]> resultRedis = gson.fromJson(fromJedis, myList);
 
         //Wyswietlanie wynikow z Redis
         resultRedis.forEach(arr -> System.out.println(Arrays.toString(arr)));
         System.out.println("To byly wyniki z redisa");
+    }
+
+    private static  List<String[]> getDBresults(Dao<customer, Integer> daoCustomer, String query) throws SQLException{
+        GenericRawResults<String[]> rawResults = daoCustomer.queryRaw(query);
+        List<String[]> resultDB = rawResults.getResults();
+        //Wyswietlenie wynikow z bazy
+        resultDB.forEach(ar -> System.out.println(Arrays.toString(ar)));
+        System.out.println("To byly wyniki z bazy");
+        return resultDB;
     }
 
 }
