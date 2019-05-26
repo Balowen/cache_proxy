@@ -1,6 +1,7 @@
 package proxy;
 
 import com.google.gson.Gson;
+import com.google.gson.reflect.TypeToken;
 import com.j256.ormlite.dao.Dao;
 import com.j256.ormlite.dao.DaoManager;
 import com.j256.ormlite.dao.GenericRawResults;
@@ -9,6 +10,7 @@ import com.j256.ormlite.support.ConnectionSource;
 import redis.clients.jedis.Jedis;
 
 import java.io.IOException;
+import java.lang.reflect.Type;
 import java.sql.SQLException;
 import java.util.Arrays;
 import java.util.List;
@@ -27,14 +29,14 @@ public class proxy {
         Gson gson = new Gson();
         while(true) {
 
-            Scanner scan = new Scanner(System.in);
+            Scanner sc = new Scanner(System.in);
             System.out.println("Wpisz stop by zamknac program");
             System.out.println("Podaj query: ");
 
-            String query = scan.nextLine();
+            String query = sc.nextLine();
             String lCaseQuery = query.toLowerCase();
 
-            if (query.equals("stop")) {
+            if (lCaseQuery.equals("stop")) {
                 connectionSource.close();
                 break;
             }
@@ -42,29 +44,21 @@ public class proxy {
                 //Ustawienie klucza dla query
                 //klucz to query malymi literami - bez spacji
                 String redisKey = lCaseQuery.replaceAll(" ","");
+
                 //Sprawdzenie czy wyniki sa w Redis
-                if (jedis.exists(redisKey)) {
-
-                    String fromJedis = jedis.get(redisKey);
-                    List<String[]> wynik = gson.fromJson(fromJedis, List.class);
-
-                    //Printing result
-                    for (int i = 0; i < wynik.size(); i++) {
-                        System.out.println(wynik.get(i));
-                    }
-                    System.out.println("To byly wyniki z redisa");
-                } else {
-                    //Pobranie wynikow
+                if (jedis.exists(redisKey))
+                    showRedisResults(jedis,gson, redisKey);
+                else {
+                    //Pobranie wynikow z bazy danych
                     GenericRawResults<String[]> rawResults = daoCustomer.queryRaw(query);
-                    List<String[]> result = rawResults.getResults();
+                    List<String[]> resultDB = rawResults.getResults();
 
-                    //Wyswietlenie wynikow
-                    result.forEach(arr ->
-                            System.out.println(Arrays.toString(arr)));
+                    //Wyswietlenie wynikow z bazy
+                    resultDB.forEach(ar -> System.out.println(Arrays.toString(ar)));
                     System.out.println("To byly wyniki z bazy");
 
                     //Serializing result of query to JSON
-                    String queryRes = gson.toJson(result);
+                    String queryRes = gson.toJson(resultDB);
                     //Setting result in Redis
                     jedis.set(redisKey, queryRes);
                     //Setting expire time
@@ -73,4 +67,15 @@ public class proxy {
             }
         }
     }
+
+    private static void showRedisResults(Jedis jedis, Gson gson, String redisKey){
+        Type type = new TypeToken<List<String[]>>(){}.getType();
+        String fromJedis = jedis.get(redisKey);
+        List<String[]> resultRedis = gson.fromJson(fromJedis, type);
+
+        //Wyswietlanie wynikow z Redis
+        resultRedis.forEach(arr -> System.out.println(Arrays.toString(arr)));
+        System.out.println("To byly wyniki z redisa");
+    }
+
 }
